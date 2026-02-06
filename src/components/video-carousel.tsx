@@ -18,10 +18,16 @@ interface Video {
 
 interface VideoCarouselProps {
   videos: Video[];
+  onIndexChange?: (index: number) => void;
+  externalIndex?: number;
 }
 
-export function VideoCarousel({ videos }: VideoCarouselProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+export function VideoCarousel({
+  videos,
+  onIndexChange,
+  externalIndex,
+}: VideoCarouselProps) {
+  const [currentIndex, setCurrentIndex] = useState(externalIndex || 0);
   const [direction, setDirection] = useState(1);
   const [blobUrls, setBlobUrls] = useState<Map<string, string>>(new Map());
   const [loadingVideos, setLoadingVideos] = useState<Set<string>>(new Set());
@@ -30,6 +36,14 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
   const [interactions, setInteractions] = useState<
     Map<string, { likes: number; comments: number }>
   >(new Map());
+
+  // Sync with external index changes
+  useEffect(() => {
+    if (externalIndex !== undefined && externalIndex !== currentIndex) {
+      console.log(`External index change: ${currentIndex} -> ${externalIndex}`);
+      setCurrentIndex(externalIndex);
+    }
+  }, [externalIndex]);
 
   const getRandomInteractions = (videoId: string) => {
     if (!interactions.has(videoId)) {
@@ -117,7 +131,30 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
     prevVideosLengthRef.current = videos.length;
   }, [videos.length]);
 
-  // Cleanup blob URLs on unmount
+  // Cleanup blob URLs when videos are removed
+  useEffect(() => {
+    // Find blob URLs that no longer have corresponding videos
+    const currentVideoIds = new Set(videos.map((v) => v._id));
+    const blobsToRemove: string[] = [];
+
+    blobUrls.forEach((blobUrl, videoId) => {
+      if (!currentVideoIds.has(videoId)) {
+        blobsToRemove.push(videoId);
+        URL.revokeObjectURL(blobUrl);
+      }
+    });
+
+    if (blobsToRemove.length > 0) {
+      setBlobUrls((prev) => {
+        const newMap = new Map(prev);
+        blobsToRemove.forEach((id) => newMap.delete(id));
+        return newMap;
+      });
+      console.log(`Cleaned up ${blobsToRemove.length} blob URLs`);
+    }
+  }, [videos]);
+
+  // Cleanup all blob URLs on unmount
   useEffect(() => {
     return () => {
       blobUrls.forEach((blobUrl) => {
@@ -129,7 +166,13 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
   // Handle video end
   const handleVideoEnd = () => {
     setDirection(1);
-    setCurrentIndex((prev) => (prev + 1) % videos.length);
+    const newIndex = (currentIndex + 1) % videos.length;
+    setCurrentIndex(newIndex);
+
+    // Notify parent component
+    if (onIndexChange) {
+      onIndexChange(newIndex);
+    }
   };
 
   // Auto-play current video when blob is ready
@@ -139,10 +182,25 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
 
     if (currentVideo && blobUrls.has(currentVideoId)) {
       currentVideo.play().catch((error) => {
-        console.log("[v0] Video autoplay failed:", error);
+        console.log("Video autoplay failed:", error);
       });
     }
   }, [currentIndex, blobUrls, videos]);
+
+  // Reset to valid index if current index is out of bounds
+  useEffect(() => {
+    if (videos.length > 0 && currentIndex >= videos.length) {
+      const newIndex = Math.min(currentIndex, videos.length - 1);
+      console.log(
+        `Index out of bounds, resetting: ${currentIndex} -> ${newIndex}`,
+      );
+      setCurrentIndex(newIndex);
+
+      if (onIndexChange) {
+        onIndexChange(newIndex);
+      }
+    }
+  }, [videos.length, currentIndex]);
 
   const variants = {
     enter: {
@@ -228,6 +286,11 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
           />
         );
       })}
+
+      {/* Debug info - remove in production */}
+      <div className="absolute top-4 left-4 bg-black/50 text-white text-xs p-2 rounded">
+        Video {currentIndex + 1} / {videos.length}
+      </div>
     </div>
   );
 }

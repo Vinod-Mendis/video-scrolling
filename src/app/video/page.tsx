@@ -13,10 +13,13 @@ interface Video {
   downloads: number;
 }
 
+const MAX_VIDEOS = 10;
+
 export default function MyComponent() {
   const [currentVideos, setCurrentVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const existingIdsRef = useRef<Set<string>>(new Set());
 
   const fetchVideos = async () => {
@@ -31,15 +34,86 @@ export default function MyComponent() {
         );
 
         if (newVideos.length > 0) {
-          // Add new video IDs to the set
-          newVideos.forEach((video) => {
-            existingIdsRef.current.add(video._id);
+          console.log(`Found ${newVideos.length} new videos`);
+
+          setCurrentVideos((prevVideos) => {
+            // Calculate how many videos to remove to maintain MAX_VIDEOS
+            const totalAfterAdd = prevVideos.length + newVideos.length;
+            const videosToRemove = Math.max(0, totalAfterAdd - MAX_VIDEOS);
+
+            if (videosToRemove === 0) {
+              // No need to remove, just add new videos
+              newVideos.forEach((video) => {
+                existingIdsRef.current.add(video._id);
+              });
+              return [...prevVideos, ...newVideos];
+            }
+
+            // Smart removal: don't remove current or unwatched videos
+            const safeRemoveCount = Math.min(videosToRemove, currentIndex);
+
+            let finalRemoveCount = safeRemoveCount;
+            let updatedVideos = [...prevVideos];
+            let indexAdjustment = 0;
+
+            if (safeRemoveCount < videosToRemove) {
+              // Not enough watched videos to remove
+              // Remove what we can from the beginning (watched videos)
+              if (safeRemoveCount > 0) {
+                const removedVideos = updatedVideos.splice(0, safeRemoveCount);
+                removedVideos.forEach((video) => {
+                  existingIdsRef.current.delete(video._id);
+                });
+                indexAdjustment = safeRemoveCount;
+              }
+
+              // Remove remaining from the end to maintain MAX_VIDEOS
+              const remainingToRemove = videosToRemove - safeRemoveCount;
+              const removeFromEnd = updatedVideos.splice(
+                updatedVideos.length - remainingToRemove,
+                remainingToRemove,
+              );
+              removeFromEnd.forEach((video) => {
+                existingIdsRef.current.delete(video._id);
+              });
+
+              console.log(
+                `Removed ${safeRemoveCount} watched videos from start, ${remainingToRemove} from end`,
+              );
+            } else {
+              // Safe to remove from beginning only
+              const removedVideos = updatedVideos.splice(0, finalRemoveCount);
+              removedVideos.forEach((video) => {
+                existingIdsRef.current.delete(video._id);
+              });
+              indexAdjustment = finalRemoveCount;
+
+              console.log(
+                `Removed ${finalRemoveCount} watched videos from start`,
+              );
+            }
+
+            // Add new videos to the set
+            newVideos.forEach((video) => {
+              existingIdsRef.current.add(video._id);
+            });
+
+            // Add new videos to the end
+            const finalVideos = [...updatedVideos, ...newVideos];
+
+            // Adjust current index
+            setCurrentIndex((prevIndex) => {
+              const newIndex = Math.max(0, prevIndex - indexAdjustment);
+              console.log(`Index adjusted: ${prevIndex} -> ${newIndex}`);
+              return newIndex;
+            });
+
+            console.log(
+              `Queue updated: ${prevVideos.length} -> ${finalVideos.length} videos`,
+            );
+
+            return finalVideos;
           });
-
-          // Append new videos to the end without disrupting current playback
-          setCurrentVideos((prev) => [...prev, ...newVideos]);
-
-          console.log(`Added ${newVideos.length} new videos`);
         }
       } else {
         console.error("Invalid response format");
@@ -49,18 +123,23 @@ export default function MyComponent() {
     }
   };
 
-  // Initial fetch
+  // Initial fetch - limit to MAX_VIDEOS
   useEffect(() => {
     fetch("/api/videos")
       .then((res) => res.json())
       .then((result) => {
         console.log("Initial Response:", result);
         if (Array.isArray(result)) {
-          setCurrentVideos(result);
+          // Limit to MAX_VIDEOS on initial load
+          const limitedVideos = result.slice(0, MAX_VIDEOS);
+          setCurrentVideos(limitedVideos);
+
           // Store initial IDs
-          result.forEach((video) => {
+          limitedVideos.forEach((video) => {
             existingIdsRef.current.add(video._id);
           });
+
+          console.log(`Loaded ${limitedVideos.length} videos initially`);
         } else {
           setError("Invalid response format");
         }
@@ -83,7 +162,12 @@ export default function MyComponent() {
     }, 15000); // 15 seconds
 
     return () => clearInterval(interval);
-  }, [loading]);
+  }, [loading, currentIndex]);
+
+  // Handle index updates from VideoCarousel
+  const handleIndexChange = (newIndex: number) => {
+    setCurrentIndex(newIndex);
+  };
 
   if (loading) return <div>Loading...</div>;
   if (error) return <div>Error: {error}</div>;
@@ -92,7 +176,11 @@ export default function MyComponent() {
     <main className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-[#442E8D] via-[#702A8C] to-[#442E8D] overflow-hidden ">
       {/* 9:16 aspect ratio container centered on screen */}
       <div className="aspect-[9/16] w-full rounded-lg overflow-hidden shadow-2xl">
-        <VideoCarousel videos={currentVideos} />
+        <VideoCarousel
+          videos={currentVideos}
+          onIndexChange={handleIndexChange}
+          externalIndex={currentIndex}
+        />
       </div>
     </main>
   );
