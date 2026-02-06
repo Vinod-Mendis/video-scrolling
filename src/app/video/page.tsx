@@ -53,8 +53,9 @@ export default function MyComponent() {
             // Smart removal: don't remove current or unwatched videos
             const safeRemoveCount = Math.min(videosToRemove, currentIndex);
 
-            let finalRemoveCount = safeRemoveCount;
-            let updatedVideos = [...prevVideos];
+            const finalRemoveCount = safeRemoveCount;
+            const updatedVideos = [...prevVideos];
+
             let indexAdjustment = 0;
 
             if (safeRemoveCount < videosToRemove) {
