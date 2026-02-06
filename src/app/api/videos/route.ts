@@ -3,10 +3,12 @@
 import clientPromise from "@/lib/mongodb";
 import { NextResponse } from "next/server";
 
+const DB_NAME = process.env.MONGODB_DB_NAME;
+
 export async function GET() {
   try {
     const client = await clientPromise;
-    const db = client.db("roaradx_videos"); // Hardcode to verify
+    const db = client.db(DB_NAME); // Hardcode to verify
     const collection = db.collection("videos");
 
     const data = await collection.find({}).toArray();
@@ -18,7 +20,7 @@ export async function GET() {
     console.error("MongoDB Error:", error);
     return NextResponse.json(
       { error: "Failed to fetch data", details: String(error) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
