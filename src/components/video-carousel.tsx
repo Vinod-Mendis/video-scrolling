@@ -305,9 +305,9 @@ export function VideoCarousel({
       })}
 
       {/* Debug info - remove in production */}
-      <div className="absolute top-4 left-4 bg-black/50 text-white text-xs p-2 rounded">
+      {/* <div className="absolute top-4 left-4 bg-black/50 text-white text-xs p-2 rounded">
         Video {currentIndex + 1} / {videos.length}
-      </div>
+      </div> */}
     </div>
   );
 }
